@@ -21,46 +21,6 @@ Plotly
 CCXT
 Uniswap
 
-Architecture
-          +----------------------+
-          |     Collector        |
-          |  CCXT + Uniswap API  |
-          +----------+-----------+
-                     |
-                     |
-                     v
-          +----------------------+
-          |    price_records     |
-          +----------+-----------+
-                     |
-                     |
-          +----------v-----------+
-          |     Spread Job       |
-          +----------+-----------+
-                     |
-                     |
-                     v
-          +----------------------+
-          |   spread_records     |
-          +----------+-----------+
-                     |
-                     |
-          +----------v-----------+
-          |   Analytics Job      |
-          +----------+-----------+
-                     |
-                     |
-                     v
-          +----------------------+
-          | analytics_records    |
-          +----------+-----------+
-                     |
-      +--------------+---------------+
-      |                              |
-      |                              |
-      v                              v
-Backtest Engine                Dashboard
-
 Features
 CEX Price Collection
 DEX Price Collection
