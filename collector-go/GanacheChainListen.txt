@@ -1,0 +1,165 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"log"
+	"math/big"
+	"time"
+
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
+	_ "github.com/mattn/go-sqlite3"
+)
+
+type SwapEvent struct {
+	Sender    common.Address
+	EthAmount *big.Int
+	MinReturn *big.Int
+	To        common.Address
+	TxHash    common.Hash
+	BlockNum  uint64
+	BlockTime time.Time
+}
+
+func main() {
+	// 1. 连接本地Ganache（端口7545，对应你截图的RPC）
+	client, err := ethclient.Dial("ws://127.0.0.1:7545")
+	if err != nil {
+		log.Fatalf("连接节点失败: %v", err)
+	}
+	defer client.Close()
+	log.Println("✅ 节点连接成功")
+
+	// 2. 数据库初始化
+	db, err := sql.Open("sqlite3", "monitor.db")
+	if err != nil {
+		log.Fatalf("打开数据库失败: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`
+	CREATE TABLE IF NOT EXISTS events (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tx_hash TEXT UNIQUE,
+		sender TEXT,
+		eth_amount TEXT,
+		min_return TEXT,
+		to_addr TEXT,
+		block_num INTEGER,
+		block_time DATETIME,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);`)
+	if err != nil {
+		log.Fatalf("建表失败: %v", err)
+	}
+
+	// ⬇️⬇️⬇️ 替换成你本地部署的合约地址（截图里的0xcbcAA5c34Bb41376D6622f1b8401b345B9E7b2e6）
+	contractAddr := common.HexToAddress("0xcbcAA5c34Bb41376D6622f1b8401b345B9E7b2e6")
+
+	// ✅ 正确事件签名：SwapTriggered(address,uint256,uint256,address)
+	// 用keccak256计算的正确哈希，绝对没错
+	eventSig := common.HexToHash("0xca0e7bbe0fb2da4b7847fdcb9cdd720c03fb22c329b6b747f49fa3a8f04a0d23")
+
+	query := ethereum.FilterQuery{
+		Addresses: []common.Address{contractAddr},
+		Topics:    [][]common.Hash{{eventSig}},
+	}
+
+	logs := make(chan types.Log)
+	sub, err := client.SubscribeFilterLogs(context.Background(), query, logs)
+	if err != nil {
+		log.Fatalf("订阅失败: %v", err)
+	}
+	defer sub.Unsubscribe()
+
+	log.Println("✅ 开始监听 SwapTriggered 事件...")
+	log.Println("✅ 调用合约函数就会立刻打印！")
+
+	for {
+		select {
+		case err := <-sub.Err():
+			log.Fatalf("监听错误: %v", err)
+		case vLog := <-logs:
+			// ✅ 修复后的解析函数
+			evt := parseEvent(vLog, client)
+			printEvent(evt)
+			saveToDB(db, evt)
+		}
+	}
+}
+
+// ✅ 完全正确的事件解析逻辑
+func parseEvent(vLog types.Log, client *ethclient.Client) SwapEvent {
+	var evt SwapEvent
+	evt.TxHash = vLog.TxHash
+	evt.BlockNum = vLog.BlockNumber
+
+	// Topics[0] = 事件签名，Topics[1-3] = 3个indexed参数
+	if len(vLog.Topics) >= 4 {
+		// Topics[1] = sender (address)
+		evt.Sender = common.BytesToAddress(vLog.Topics[1].Bytes())
+		// Topics[2] = ethAmount (uint256，直接用SetBytes)
+		evt.EthAmount = new(big.Int).SetBytes(vLog.Topics[2].Bytes())
+		// Topics[3] = to (address)
+		evt.To = common.BytesToAddress(vLog.Topics[3].Bytes())
+	}
+
+	// Data[0:32] = minReturn (唯一非indexed参数)
+	if len(vLog.Data) >= 32 {
+		evt.MinReturn = new(big.Int).SetBytes(vLog.Data[:32])
+	}
+
+	// 获取区块时间
+	block, err := client.BlockByNumber(context.Background(), big.NewInt(int64(vLog.BlockNumber)))
+	if err == nil {
+		evt.BlockTime = time.Unix(int64(block.Time()), 0)
+	} else {
+		evt.BlockTime = time.Now()
+	}
+
+	return evt
+}
+
+func printEvent(evt SwapEvent) {
+	// 转换wei为ETH
+	ethAmount := new(big.Float).Quo(
+		new(big.Float).SetInt(evt.EthAmount),
+		new(big.Float).SetInt(big.NewInt(1e18)),
+	)
+
+	fmt.Println("\n========================================")
+	fmt.Println("🎉 成功监听到 SwapTriggered 事件！")
+	fmt.Println("========================================")
+	fmt.Printf("交易哈希: %s\n", evt.TxHash.Hex())
+	fmt.Printf("发起地址: %s\n", evt.Sender.Hex())
+	fmt.Printf("转入ETH: %.6f ETH (%s wei)\n", ethAmount, evt.EthAmount.String())
+	fmt.Printf("最小输出: %s\n", evt.MinReturn.String())
+	fmt.Printf("接收地址: %s\n", evt.To.Hex())
+	fmt.Printf("区块高度: %d\n", evt.BlockNum)
+	fmt.Printf("区块时间: %s\n", evt.BlockTime.Format("2006-01-02 15:04:05"))
+	fmt.Println("========================================\n")
+}
+
+func saveToDB(db *sql.DB, evt SwapEvent) {
+	_, err := db.Exec(`
+	INSERT OR IGNORE INTO events (
+		tx_hash, sender, eth_amount, min_return, to_addr, block_num, block_time
+	) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		evt.TxHash.Hex(),
+		evt.Sender.Hex(),
+		evt.EthAmount.String(),
+		evt.MinReturn.String(),
+		evt.To.Hex(),
+		evt.BlockNum,
+		evt.BlockTime.Format("2006-01-02 15:04:05"),
+	)
+	if err != nil {
+		log.Printf("❌ 保存失败: %v", err)
+		return
+	}
+	log.Println("✅ 数据已成功存入数据库")
+}

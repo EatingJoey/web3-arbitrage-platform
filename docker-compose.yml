@@ -1,0 +1,51 @@
+version: "3.9"
+
+services:
+
+  mysql:
+    image: mysql:8.4
+    container_name: web3-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: web3
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+  collector:
+    build: ./collector-go
+    env_file:
+      - .env
+    depends_on:
+      - mysql
+    ports:
+    - "8080:8080"
+
+  monitor:
+    build: ./analytics-python
+    volumes:
+      - ./analytics-python:/app
+    image: web3-monitor
+    command: python main.py
+    env_file:
+      - .env
+    depends_on:
+      - mysql
+
+  
+  dashboard:
+    image: web3-monitor
+    volumes:
+      - ./analytics-python:/app
+    command: python dashboard.py
+    env_file:
+      - .env
+    ports:
+      - "8050:8050"
+    depends_on:
+      - mysql
+
+volumes:
+  mysql-data:
+

@@ -1,0 +1,8 @@
+ccxt==4.4.91
+pandas
+plotly
+aiohttp
+asyncio
+python-dotenv
+pymysql
+dash
