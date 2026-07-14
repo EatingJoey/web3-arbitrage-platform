@@ -2,6 +2,7 @@ Web3 Arbitrage Platform
 Project Overview
 
 一个基于 Python + Docker 构建的 Web3 套利研究平台。
+当前项目为了演示量化研究流程，Collector 每分钟拉取一次最新的 1 小时 K 线，用于持续更新 Analytics 指标；实际高频套利系统通常会采用 WebSocket 实时行情或 Tick 数据，而不是依赖小时级 K 线。
 
 主要用于：
 

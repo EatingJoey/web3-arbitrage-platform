@@ -1,9 +1,9 @@
 # 配置需要的交易所与市场对
 EXCHANGES = ["okx","binance","bybit"]  # ccxt 的交易所 id，okx 对应 ccxt 中是 "okx"
 SYMBOLS = {
-    "okx":     ["BTC/USDT", "ETH/USDT"],
-    "binance": ["BTC/USDT", "ETH/USDT"],
-    "bybit":   ["BTC/USDT", "ETH/USDT"]
+    "okx":     ["BTC/USDT"],
+    "binance": ["BTC/USDT"],
+    "bybit":   ["BTC/USDT"]
 }
 TIMEFRAME = "1h"   # k线周期
 LIMIT = 200        # 拉取多少根k线
